@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { addToCart } from "../../lib/cart";
 import { useToast } from "../../components/ToastProvider";
@@ -33,6 +34,7 @@ const CATEGORY_ICONS = {
 };
 
 export default function HomePage() {
+  const router = useRouter();
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [name, setName] = useState("");
@@ -56,6 +58,13 @@ export default function HomePage() {
     setCategories(cats || []);
     setProducts(prods || []);
     const uid = session.session?.user?.id || null;
+    if (uid) {
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", uid).maybeSingle();
+      if (profile?.role === "admin") {
+        router.replace("/admin");
+        return;
+      }
+    }
     setUserId(uid);
     setName(
       session.session?.user?.user_metadata?.full_name ||

@@ -3,9 +3,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../lib/supabase";
-import BottomNav from "../../components/BottomNav";
 import { SkeletonBlock } from "../../components/Skeleton";
-import { ArrowLeft, Package, Tags, ShieldCheck } from "lucide-react";
+import { Package, Tags, ShieldCheck, ArrowUpRight, Store, Sparkles } from "lucide-react";
 
 export default function AdminDashboardPage() {
   const router = useRouter();
@@ -51,30 +50,30 @@ export default function AdminDashboardPage() {
 
   return (
     <div className="page">
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-        <button onClick={() => router.push("/account")} className="icon-back">
-          <ArrowLeft size={16} />
-        </button>
-        <h1 style={{ fontSize: 17, margin: 0 }}>Panel admin</h1>
-      </div>
-      <p style={{ fontSize: 12, color: "var(--ink-soft)", margin: "4px 0 18px" }}>
-        <ShieldCheck size={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />
-        Khusus akun dengan peran admin.
-      </p>
+      <section className="admin-welcome">
+        <div className="admin-welcome-copy">
+          <span className="admin-welcome-kicker"><ShieldCheck size={14} /> Ruang kerja admin</span>
+          <h1>Kelola tokomu<br />dengan lebih mudah.</h1>
+          <p>Atur produk dan kategori, lalu pastikan katalog selalu siap untuk pelanggan.</p>
+          <Link href="/home" className="admin-welcome-link"><Store size={16} /> Lihat halaman toko <ArrowUpRight size={15} /></Link>
+        </div>
+        <div className="admin-welcome-art" aria-hidden="true"><div className="admin-art-circle"><Package size={34} /></div><span className="admin-art-spark"><Sparkles size={21} /></span></div>
+      </section>
+
+      <div className="admin-section-heading"><div><h2>Pengelolaan</h2><p>Pilih bagian yang ingin kamu perbarui.</p></div></div>
 
       {menu.map(({ href, label, desc, icon: Icon }) => (
-        <Link key={href} href={href} className="card card-interactive" style={{ display: "flex", gap: 12, marginBottom: 10 }}>
-          <div style={{ width: 42, height: 42, borderRadius: 12, background: "#eaf1ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Link key={href} href={href} className="card card-interactive admin-management-card">
+          <div className="admin-management-icon">
             <Icon size={19} color="var(--blue-deep)" />
           </div>
-          <div>
-            <p style={{ margin: "0 0 2px", fontSize: 13, fontWeight: 700 }}>{label}</p>
-            <p style={{ margin: 0, fontSize: 11.5, color: "var(--ink-soft)" }}>{desc}</p>
+          <div className="admin-management-copy">
+            <p>{label}</p>
+            <span>{desc}</span>
           </div>
+          <span className="admin-management-arrow"><ArrowUpRight size={17} /></span>
         </Link>
       ))}
-
-      <BottomNav />
     </div>
   );
 }

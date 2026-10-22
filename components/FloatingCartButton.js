@@ -10,7 +10,7 @@ const rupiah = (n) => "Rp" + Number(n).toLocaleString("id-ID");
 // Halaman-halaman yang tidak perlu tombol keranjang mengambang, supaya
 // tidak tumpang tindih dengan halaman yang memang isinya keranjang/checkout
 // atau halaman sebelum login.
-const HIDDEN_ON = ["/cart", "/login", "/register", "/onboarding", "/"];
+const HIDDEN_ON = ["/cart", "/login", "/register", "/onboarding", "/", "/admin"];
 
 export default function FloatingCartButton() {
   const router = useRouter();
@@ -40,7 +40,7 @@ export default function FloatingCartButton() {
   const count = cart.reduce((s, i) => s + i.qty, 0);
   const total = cart.reduce((s, i) => s + i.harga * i.qty, 0);
 
-  if (HIDDEN_ON.includes(pathname) || count === 0) return null;
+  if (HIDDEN_ON.includes(pathname) || pathname.startsWith("/admin/") || count === 0) return null;
 
   return (
     <>
