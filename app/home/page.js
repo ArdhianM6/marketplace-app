@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "../../lib/supabase";
 import { addToCart } from "../../lib/cart";
 import { useToast } from "../../components/ToastProvider";
@@ -22,6 +22,7 @@ import {
   Gift,
   X,
   Zap,
+  LayoutDashboard,
 } from "lucide-react";
 
 const CATEGORY_ICONS = {
@@ -34,11 +35,11 @@ const CATEGORY_ICONS = {
 };
 
 export default function HomePage() {
-  const router = useRouter();
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [name, setName] = useState("");
   const [userId, setUserId] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [wishlistIds, setWishlistIds] = useState([]);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -60,10 +61,7 @@ export default function HomePage() {
     const uid = session.session?.user?.id || null;
     if (uid) {
       const { data: profile } = await supabase.from("profiles").select("role").eq("id", uid).maybeSingle();
-      if (profile?.role === "admin") {
-        router.replace("/admin");
-        return;
-      }
+      setIsAdmin(profile?.role === "admin");
     }
     setUserId(uid);
     setName(
@@ -118,7 +116,19 @@ export default function HomePage() {
             <p style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>{name || "Pengguna"}</p>
           </div>
         </div>
-        <NotificationBell />
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="chip"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, minHeight: 38, padding: "0 10px", textDecoration: "none", color: "var(--blue-deep)", fontSize: 11, fontWeight: 700 }}
+            >
+              <LayoutDashboard size={15} />
+              Panel admin
+            </Link>
+          )}
+          <NotificationBell />
+        </div>
       </div>
 
       <ExpiryBanner />
