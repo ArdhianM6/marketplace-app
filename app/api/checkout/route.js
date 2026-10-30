@@ -5,7 +5,7 @@ import { getDistanceKm, getShippingOptions, calcEstimasiTiba } from "../../../li
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { items, addressId, metode, metodePengiriman, jadwalKirim } = body;
+    const { items, addressId, metode, metodePengiriman, jadwalKirim, userVoucherId = null } = body;
 
     const authHeader = req.headers.get("authorization") || "";
     const token = authHeader.replace("Bearer ", "");
@@ -17,6 +17,9 @@ export async function POST(req) {
 
     if (!items?.length) {
       return Response.json({ error: "Keranjang kosong." }, { status: 400 });
+    }
+    if (!["ewallet", "bank", "saldo"].includes(metode)) {
+      return Response.json({ error: "Metode pembayaran tidak valid." }, { status: 400 });
     }
 
     const { data: address } = await supabaseAdmin
@@ -53,17 +56,19 @@ export async function POST(req) {
     const ongkir = chosen.price;
 
     const { data: order, error: rpcError } = await supabaseAdmin
-      .rpc("checkout_create_order", {
+      .rpc("checkout_create_order_with_voucher", {
         p_user_id: userId,
         p_address_id: addressId,
         p_items: items.map((i) => ({ id: i.id, harga: i.harga, qty: i.qty })),
         p_metode: metode,
         p_ongkir: ongkir,
+        p_user_voucher_id: userVoucherId,
       })
       .single();
 
     if (rpcError) {
-      return Response.json({ error: rpcError.message || "Gagal memproses checkout." }, { status: 400 });
+      const message = rpcError.message || "Gagal memproses checkout.";
+      return Response.json({ error: message.includes("Saldo tidak cukup") ? "Saldo tidak cukup untuk membayar pesanan ini." : message }, { status: 400 });
     }
 
     // Simpan metode & jadwal pengiriman terpisah dari fungsi checkout_create_order,
@@ -79,7 +84,8 @@ export async function POST(req) {
       extraFields.estimasi_tiba = calcEstimasiTiba(chosen.id, new Date(), jadwalKirim).toISOString();
     }
 
-    await supabaseAdmin.from("orders").update(extraFields).eq("id", order.id);
+    const { error: orderUpdateError } = await supabaseAdmin.from("orders").update(extraFields).eq("id", order.id);
+    if (orderUpdateError) throw orderUpdateError;
 
     if (metode === "saldo") {
       return Response.json({ order });
@@ -92,10 +98,17 @@ export async function POST(req) {
     });
 
     const midtransOrderId = `order-${order.id}`;
-    const transaction = await snap.createTransaction({
-      transaction_details: { order_id: midtransOrderId, gross_amount: order.total },
-      enabled_payments: metode === "ewallet" ? ["gopay", "qris", "shopeepay"] : ["bank_transfer"],
-    });
+    let transaction;
+    try {
+      transaction = await snap.createTransaction({
+        transaction_details: { order_id: midtransOrderId, gross_amount: order.total },
+        enabled_payments: metode === "ewallet" ? ["gopay", "qris", "shopeepay"] : ["bank_transfer"],
+      });
+    } catch (paymentError) {
+      await supabaseAdmin.from("orders").update({ status_bayar: "failed" }).eq("id", order.id);
+      await supabaseAdmin.from("user_vouchers").update({ reserved_order_id: null }).eq("reserved_order_id", order.id);
+      throw paymentError;
+    }
 
     await supabaseAdmin.from("orders").update({ midtrans_order_id: midtransOrderId }).eq("id", order.id);
 

@@ -39,6 +39,8 @@ create table addresses (
   alamat_lengkap text not null,
   kota text not null,
   kode_pos text,
+  latitude double precision,
+  longitude double precision,
   is_default boolean not null default false,
   created_at timestamptz not null default now()
 );

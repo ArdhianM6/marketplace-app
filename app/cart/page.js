@@ -7,7 +7,7 @@ import { supabase } from "../../lib/supabase";
 import BottomNav from "../../components/BottomNav";
 import { useToast } from "../../components/ToastProvider";
 import { getDistanceKm, getShippingOptions, availableSlotsForToday, TIME_SLOTS, slotToTimestamp } from "../../lib/shipping";
-import { MapPin, Smartphone, Landmark, Wallet, Minus, Plus, ShoppingCart, Plus as PlusIcon, Trash2, Zap, Clock, Leaf, CalendarClock } from "lucide-react";
+import { MapPin, Smartphone, Landmark, Wallet, Minus, Plus, ShoppingCart, Plus as PlusIcon, Trash2, Zap, Clock, Leaf, CalendarClock, TicketPercent, X, Check, ArrowRight, ShieldCheck } from "lucide-react";
 
 const rupiah = (n) => "Rp" + Number(n).toLocaleString("id-ID");
 
@@ -24,6 +24,10 @@ export default function CartPage() {
   const [scheduleDay, setScheduleDay] = useState("today");
   const [scheduleSlot, setScheduleSlot] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [vouchers, setVouchers] = useState([]);
+  const [voucherId, setVoucherId] = useState("");
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [saldo, setSaldo] = useState(null);
 
   const loadAddresses = () => {
     supabase.from("addresses").select("*").then(({ data }) => {
@@ -33,10 +37,37 @@ export default function CartPage() {
     });
   };
 
+  const loadCheckoutData = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const [{ data: voucherRows }, { data: profile }] = await Promise.all([
+      supabase.from("user_vouchers").select("id, expires_at, vouchers(id, judul, tipe, nilai)").eq("user_id", user.id).eq("status", "available").is("reserved_order_id", null),
+      supabase.from("profiles").select("saldo").eq("id", user.id).single(),
+    ]);
+    const now = Date.now();
+    setVouchers((voucherRows || []).filter((v) => v.vouchers && (!v.expires_at || new Date(v.expires_at).getTime() > now)));
+    setSaldo(profile?.saldo ?? null);
+  };
+
   useEffect(() => {
     setCart(getCart());
     loadAddresses();
+    loadCheckoutData();
   }, []);
+
+  useEffect(() => {
+    if (!receiptOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event) => {
+      if (event.key === "Escape" && !loading) setReceiptOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [receiptOpen, loading]);
 
   const change = (id, delta) => setCart(updateQty(id, delta));
 
@@ -54,15 +85,23 @@ export default function CartPage() {
 
   const subtotal = cart.reduce((s, i) => s + i.harga * i.qty, 0);
   const ongkir = cart.length ? chosenShipping.price : 0;
-  const total = subtotal + ongkir;
+  const selectedVoucher = vouchers.find((v) => v.id === voucherId);
+  const voucherDiscount = useMemo(() => {
+    if (!selectedVoucher?.vouchers) return 0;
+    const voucher = selectedVoucher.vouchers;
+    if (voucher.tipe === "gratis_ongkir") return ongkir;
+    if (voucher.tipe === "persen") return Math.min(subtotal, Math.floor(subtotal * Number(voucher.nilai) / 100));
+    return Math.min(subtotal, Number(voucher.nilai) || 0);
+  }, [selectedVoucher, subtotal, ongkir]);
+  const total = Math.max(0, subtotal + ongkir - voucherDiscount);
 
   const paymentOptions = [
-    { id: "ewallet", label: "E-Wallet", icon: Smartphone },
-    { id: "bank", label: "Bank", icon: Landmark },
-    { id: "saldo", label: "Saldo", icon: Wallet },
+    { id: "ewallet", label: "E-Wallet", detail: "QRIS, GoPay, ShopeePay", icon: Smartphone },
+    { id: "bank", label: "Transfer bank", detail: "Virtual account", icon: Landmark },
+    { id: "saldo", label: "Saldo PasarKita", detail: saldo == null ? "Bayar dari saldo" : `Tersedia ${rupiah(saldo)}`, icon: Wallet },
   ];
 
-  const checkout = async () => {
+  const openReceipt = () => {
     if (!addressId) {
       toast.error("Tambahkan alamat pengiriman dulu.");
       return;
@@ -71,34 +110,46 @@ export default function CartPage() {
       toast.error("Pilih jam pengiriman dulu.");
       return;
     }
-
-    setLoading(true);
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    const jadwalKirim = shippingId === "jadwal" ? slotToTimestamp(scheduleDay, scheduleSlot) : null;
-
-    const res = await fetch("/api/checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-      body: JSON.stringify({ items: cart, addressId, metode, metodePengiriman: shippingId, jadwalKirim }),
-    });
-    const data = await res.json();
-    setLoading(false);
-
-    if (data.error) {
-      toast.error(data.error);
+    if (metode === "saldo" && saldo != null && saldo < total) {
+      toast.error("Saldo belum cukup. Pilih metode pembayaran lain atau isi saldo.");
       return;
     }
+    setReceiptOpen(true);
+  };
 
-    if (data.redirectUrl) {
-      clearCart();
-      window.location.href = data.redirectUrl;
-    } else if (data.order) {
-      clearCart();
-      toast.success("Pesanan berhasil dibuat!");
-      router.push(`/orders/${data.order.id}`);
+  const checkout = async () => {
+    setLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Sesi login berakhir. Silakan masuk kembali.");
+        return;
+      }
+      const jadwalKirim = shippingId === "jadwal" ? slotToTimestamp(scheduleDay, scheduleSlot) : null;
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ items: cart, addressId, metode, metodePengiriman: shippingId, jadwalKirim, userVoucherId: voucherId || null }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        toast.error(data.error);
+        return;
+      }
+      if (data.redirectUrl) {
+        clearCart();
+        setReceiptOpen(false);
+        window.location.href = data.redirectUrl;
+      } else if (data.order) {
+        clearCart();
+        setReceiptOpen(false);
+        toast.success("Pesanan berhasil dibuat!");
+        router.push(`/orders/${data.order.id}`);
+      }
+    } catch {
+      toast.error("Checkout belum berhasil. Periksa koneksi dan coba lagi.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -268,22 +319,28 @@ export default function CartPage() {
       )}
 
       <p style={{ fontSize: 13, fontWeight: 700, margin: "4px 0 10px" }}>Metode pembayaran</p>
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        {paymentOptions.map(({ id, label, icon: Icon }) => (
+      <div className="checkout-payment-options">
+        {paymentOptions.map(({ id, label, detail, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setMetode(id)}
-            style={{
-              flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "10px 4px",
-              borderRadius: 12, cursor: "pointer",
-              border: metode === id ? "1.5px solid var(--blue)" : "1px solid var(--line)",
-              background: metode === id ? "#eaf1ff" : "#fff",
-            }}
+            className={`checkout-payment-option ${metode === id ? "selected" : ""}`}
+            aria-pressed={metode === id}
           >
-            <Icon size={17} color={metode === id ? "var(--blue)" : "var(--ink-soft)"} />
-            <span style={{ fontSize: 10.5, fontWeight: 700, color: metode === id ? "var(--blue)" : "var(--ink-soft)" }}>{label}</span>
+            <span className="checkout-payment-icon"><Icon size={19} /></span>
+            <span className="checkout-payment-copy"><strong>{label}</strong><small>{detail}</small></span>
+            <span className="checkout-radio">{metode === id && <Check size={13} />}</span>
           </button>
         ))}
+      </div>
+
+      <div className="checkout-voucher card">
+        <div className="checkout-voucher-heading"><span className="checkout-voucher-icon"><TicketPercent size={18} /></span><span><strong>Pakai voucher</strong><small>{vouchers.length ? `${vouchers.length} voucher tersedia` : "Voucher belanja kamu"}</small></span></div>
+        <select aria-label="Pilih voucher" value={voucherId} onChange={(e) => setVoucherId(e.target.value)}>
+          <option value="">Tanpa voucher</option>
+          {vouchers.map((v) => <option key={v.id} value={v.id}>{v.vouchers.judul} · {v.vouchers.tipe === "persen" ? `${v.vouchers.nilai}%` : v.vouchers.tipe === "gratis_ongkir" ? "Gratis ongkir" : rupiah(v.vouchers.nilai)}</option>)}
+        </select>
+        {selectedVoucher && <p className="checkout-voucher-applied"><Check size={14} /> Hemat {rupiah(voucherDiscount)} dari {selectedVoucher.vouchers.judul}</p>}
       </div>
 
       <div className="card">
@@ -295,6 +352,7 @@ export default function CartPage() {
           <span style={{ color: "var(--ink-soft)" }}>Ongkos kirim ({chosenShipping.label})</span>
           <span>{ongkir === 0 ? "Gratis" : rupiah(ongkir)}</span>
         </div>
+        {selectedVoucher && <div className="checkout-total-row discount"><span>Voucher · {selectedVoucher.vouchers.judul}</span><span>− {rupiah(voucherDiscount)}</span></div>}
         <div style={{ height: 1, background: "var(--line)", margin: "8px 0" }} />
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800 }}>
           <span>Total</span>
@@ -302,9 +360,11 @@ export default function CartPage() {
         </div>
       </div>
 
-      <button className="btn-primary" style={{ width: "100%", marginTop: 14 }} onClick={checkout} disabled={loading || !cart.length}>
-        {loading ? "Memproses..." : "Bayar sekarang"}
+      <button className="btn-primary checkout-continue" style={{ width: "100%", marginTop: 14 }} onClick={openReceipt} disabled={loading || !cart.length}>
+        Lanjut ke pembayaran <ArrowRight size={17} />
       </button>
+
+      {receiptOpen && <div className="checkout-modal-backdrop" onClick={() => !loading && setReceiptOpen(false)}><section className="checkout-modal" role="dialog" aria-modal="true" aria-labelledby="receipt-title" onClick={(e) => e.stopPropagation()}><button className="checkout-modal-close" onClick={() => setReceiptOpen(false)} aria-label="Tutup" disabled={loading}><X size={19} /></button><div className="receipt-success-icon"><ShieldCheck size={24} /></div><span className="receipt-eyebrow">RINGKASAN PESANAN</span><h2 id="receipt-title">Periksa sebelum membayar</h2><p className="receipt-address"><MapPin size={15} /> {selectedAddress?.label || "Alamat"} · {selectedAddress?.alamat_lengkap || "Alamat pengiriman"}</p><div className="receipt-items">{cart.map((item) => <div className="receipt-item" key={item.id}><span>{item.nama}<small>{item.qty} × {rupiah(item.harga)}</small></span><strong>{rupiah(item.harga * item.qty)}</strong></div>)}</div><div className="receipt-totals"><div><span>Subtotal barang</span><strong>{rupiah(subtotal)}</strong></div><div><span>Ongkos kirim · {chosenShipping.label}</span><strong>{ongkir ? rupiah(ongkir) : "Gratis"}</strong></div>{selectedVoucher && <div className="discount"><span>Potongan voucher</span><strong>− {rupiah(voucherDiscount)}</strong></div>}<div className="receipt-grand-total"><span>Total pembayaran</span><strong>{rupiah(total)}</strong></div></div><div className="receipt-method"><span className="checkout-payment-icon">{metode === "ewallet" ? <Smartphone size={18} /> : metode === "bank" ? <Landmark size={18} /> : <Wallet size={18} />}</span><span><small>Metode pembayaran</small><strong>{paymentOptions.find((item) => item.id === metode)?.label}</strong></span>{metode === "saldo" && saldo != null && <small>Saldo {rupiah(saldo)}</small>}</div><button className="btn-primary receipt-pay" onClick={checkout} disabled={loading}>{loading ? "Memproses pesanan…" : <>Konfirmasi & bayar {rupiah(total)} <ArrowRight size={17} /></>}</button><button className="receipt-edit" onClick={() => setReceiptOpen(false)} disabled={loading}>Kembali, ubah pesanan</button></section></div>}
 
       <BottomNav />
     </div>

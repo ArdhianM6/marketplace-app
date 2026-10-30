@@ -119,24 +119,40 @@ export default function NewAddressPage() {
 
   const save = async (e) => {
     e.preventDefault();
+    if (saving) return;
     setSaving(true);
     setError("");
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session?.user) {
+        setError("Sesi login tidak ditemukan. Silakan login ulang sebelum menyimpan alamat.");
+        return;
+      }
 
-    const { error } = await supabase.from("addresses").insert({
-      user_id: session.user.id,
-      ...form,
-      latitude: coords?.lat ?? null,
-      longitude: coords?.lng ?? null,
-    });
-    setSaving(false);
-    if (error) {
-      setError(error.message);
-      return;
+      const { count: addressCount, error: lookupError } = await supabase
+        .from("addresses")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", session.user.id);
+      if (lookupError) throw lookupError;
+
+      const { error: insertError } = await supabase.from("addresses").insert({
+        user_id: session.user.id,
+        ...Object.fromEntries(Object.entries(form).map(([key, value]) => [key, value.trim()])),
+        latitude: coords?.lat ?? null,
+        longitude: coords?.lng ?? null,
+        is_default: addressCount === 0,
+      }).abortSignal(AbortSignal.timeout(15000));
+      if (insertError) throw insertError;
+      router.push("/cart");
+    } catch (err) {
+      console.error("Gagal menyimpan alamat:", err);
+      setError(err?.name === "TimeoutError"
+        ? "Penyimpanan terlalu lama. Periksa koneksi internet lalu coba lagi."
+        : err?.message || "Alamat gagal disimpan. Silakan coba lagi.");
+    } finally {
+      setSaving(false);
     }
-    router.push("/cart");
   };
 
   return (

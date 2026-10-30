@@ -53,6 +53,9 @@ export async function POST(req) {
       .single();
 
     if (order) {
+      if (isFailed) {
+        await supabaseAdmin.from("user_vouchers").update({ reserved_order_id: null }).eq("reserved_order_id", order.id);
+      }
       await supabaseAdmin.from("notifications").insert({
         user_id: order.user_id,
         judul: isPaid ? "Pembayaran berhasil" : "Pembayaran gagal",

@@ -10,13 +10,21 @@ export default function AddressListPage() {
   const router = useRouter();
   const [addresses, setAddresses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const load = () => {
     setLoading(true);
-    supabase.from("addresses").select("*").order("is_default", { ascending: false }).then(({ data }) => {
-      setAddresses(data || []);
-      setLoading(false);
-    });
+    supabase.from("addresses").select("*").order("is_default", { ascending: false })
+      .then(({ data, error: queryError }) => {
+        if (queryError) throw queryError;
+        setAddresses(data || []);
+        setError("");
+      })
+      .catch((err) => {
+        console.error("Gagal memuat alamat:", err);
+        setError("Alamat gagal dimuat. Periksa koneksi lalu muat ulang halaman.");
+      })
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -24,13 +32,19 @@ export default function AddressListPage() {
   }, []);
 
   const setDefault = async (id) => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    // Matikan default lama, aktifkan yang baru dipilih
-    await supabase.from("addresses").update({ is_default: false }).eq("user_id", session.user.id);
-    await supabase.from("addresses").update({ is_default: true }).eq("id", id);
-    load();
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (!session?.user) throw new Error("Sesi login tidak ditemukan. Silakan login ulang.");
+      const { error: clearError } = await supabase.from("addresses").update({ is_default: false }).eq("user_id", session.user.id);
+      if (clearError) throw clearError;
+      const { error: updateError } = await supabase.from("addresses").update({ is_default: true }).eq("id", id).eq("user_id", session.user.id);
+      if (updateError) throw updateError;
+      load();
+    } catch (err) {
+      console.error("Gagal mengubah alamat default:", err);
+      setError(err?.message || "Gagal mengubah alamat default.");
+    }
   };
 
   return (
@@ -50,7 +64,9 @@ export default function AddressListPage() {
           </div>
         ))
       ) : (
-        addresses.map((a) => (
+        <>
+        {error && <p role="alert" style={{ color: "#c4342f", fontSize: 12 }}>{error}</p>}
+        {addresses.map((a) => (
           <div key={a.id} className="card" style={{ display: "flex", gap: 10, marginBottom: 10 }}>
             <MapPin size={18} color="var(--blue)" style={{ flexShrink: 0, marginTop: 2 }} />
             <div style={{ flex: 1 }}>
@@ -72,10 +88,11 @@ export default function AddressListPage() {
               </button>
             )}
           </div>
-        ))
+        ))}
+        </>
       )}
 
-      {!loading && addresses.length === 0 && (
+      {!loading && !error && addresses.length === 0 && (
         <div className="empty-state">
           <div className="empty-state-icon">
             <MapPin size={26} color="var(--blue)" />

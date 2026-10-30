@@ -1,9 +1,10 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "../../lib/supabase";
 import { applyReferralCode, setPendingReferralCode } from "../../lib/referral";
-import { UserPlus, Mail, Eye, EyeOff, Phone, User, Check, Gift } from "lucide-react";
+import { ShoppingBag, Mail, Eye, EyeOff, Phone, User, Check, Gift, ArrowLeft, ArrowRight, Sparkles, ShieldCheck, X, CircleCheck } from "lucide-react";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -16,6 +17,7 @@ export default function RegisterPage() {
   const [refCode, setRefCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState(null);
 
   const goToStep2 = (e) => {
     e.preventDefault();
@@ -27,187 +29,87 @@ export default function RegisterPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: nama, phone: noHp } },
+    });
 
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) {
+    if (signUpError) {
       setLoading(false);
-      setError(error.message);
+      setError(signUpError.message);
       return;
     }
 
-    // Kalau project Supabase kamu mewajibkan konfirmasi email, session belum ada
-    // di titik ini — user harus klik link konfirmasi dulu sebelum bisa login.
     if (data.session) {
-      await supabase
-        .from("profiles")
-        .update({ nama, no_hp: noHp })
-        .eq("id", data.user.id);
-
-      if (refCode.trim()) {
-        await applyReferralCode(data.user.id, refCode.trim());
-      }
-
+      await supabase.from("profiles").update({ nama, no_hp: noHp }).eq("id", data.user.id);
+      if (refCode.trim()) await applyReferralCode(data.user.id, refCode.trim());
       setLoading(false);
-      router.push("/home");
+      setNotice({
+        title: "Akunmu siap!",
+        message: "Profil berhasil dibuat. Kamu bisa mulai menjelajahi produk dan promo sekarang.",
+        action: () => router.replace("/home"),
+      });
     } else {
-      // Belum ada sesi (masih perlu verifikasi email) — simpan kode referral dulu,
-      // nanti otomatis diterapkan begitu user berhasil login (lihat app/page.js).
       if (refCode.trim()) setPendingReferralCode(refCode.trim());
       setLoading(false);
-      setError("Cek email kamu untuk konfirmasi akun sebelum login.");
+      setNotice({
+        title: "Cek email untuk konfirmasi",
+        message: `Kami mengirim tautan verifikasi ke ${email}. Konfirmasi emailmu sebelum masuk ke akun.`,
+        action: () => router.replace("/login"),
+        actionLabel: "Kembali ke masuk",
+      });
     }
   };
 
   return (
-    <div className="page" style={{ paddingTop: 56, paddingBottom: 40 }}>
-      <div
-        style={{
-          width: 56, height: 56, borderRadius: 18, background: "var(--coral)",
-          display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20,
-          boxShadow: "0 10px 22px rgba(255,106,77,0.35)",
-        }}
-      >
-        <UserPlus size={26} color="#fff" />
-      </div>
-
-      <h1 style={{ fontSize: 23, margin: "0 0 4px", fontWeight: 800 }}>Buat akun baru</h1>
-      <p style={{ color: "var(--ink-soft)", fontSize: 12.5, margin: "0 0 20px" }}>
-        Daftar sekarang dan nikmati promo spesial member baru.
-      </p>
-
-      <div className="step-indicator">
-        <div
-          className="step-dot"
-          style={{
-            background: step >= 1 ? "var(--coral)" : "var(--line)",
-            color: step >= 1 ? "#fff" : "var(--ink-soft)",
-          }}
-        >
-          {step > 1 ? <Check size={14} /> : "1"}
+    <main className="auth-page register-page">
+      <section className="auth-story register-story" aria-label="PasarKita">
+        <Link href="/" className="auth-brand"><span className="auth-brand-mark"><ShoppingBag size={20} /></span><span>Pasar<span className="auth-brand-accent">Kita</span></span></Link>
+        <div className="auth-story-copy">
+          <span className="auth-story-kicker"><Sparkles size={14} /> Awali belanja lebih hemat</span>
+          <h1>Belanja nyaman,<br /><span>untungnya terasa.</span></h1>
+          <p>Buat akun untuk menyimpan favorit, memantau pesanan, dan menikmati promo khusus pelanggan.</p>
         </div>
-        <div className="step-line" style={{ background: step > 1 ? "var(--coral)" : "var(--line)" }} />
-        <div
-          className="step-dot"
-          style={{
-            background: step >= 2 ? "var(--coral)" : "var(--line)",
-            color: step >= 2 ? "#fff" : "var(--ink-soft)",
-          }}
-        >
-          2
+        <div className="auth-story-note"><span className="auth-note-icon"><ShieldCheck size={17} /></span><span><strong>Data akunmu terlindungi</strong><small>Informasi hanya digunakan untuk pengalaman belanja.</small></span></div>
+        <div className="auth-orbit auth-orbit-one" /><div className="auth-orbit auth-orbit-two" /><div className="auth-orbit auth-orbit-three" />
+      </section>
+
+      <section className="auth-panel register-panel">
+        <div className="auth-form-wrap register-form-wrap">
+          <Link href="/" className="auth-mobile-brand"><span className="auth-brand-mark"><ShoppingBag size={20} /></span>Pasar<span className="auth-brand-accent">Kita</span></Link>
+          <div className="auth-heading register-heading"><span className="auth-overline">Bergabung dengan PasarKita</span><h2>Buat akun baru</h2><p>Hanya beberapa langkah untuk mulai belanja.</p></div>
+
+          <div className="register-progress" aria-label={`Langkah ${step} dari 2`}>
+            <div className={`register-progress-step ${step === 1 ? "active" : "complete"}`}><span>{step > 1 ? <Check size={14} /> : "1"}</span><div><strong>Akun</strong><small>Email dan kata sandi</small></div></div>
+            <div className={`register-progress-line ${step === 2 ? "complete" : ""}`} />
+            <div className={`register-progress-step ${step === 2 ? "active" : ""}`}><span>2</span><div><strong>Profil</strong><small>Nama dan nomor HP</small></div></div>
+          </div>
+
+          {step === 1 ? (
+            <form onSubmit={goToStep2} className="auth-form register-form">
+              <label className="auth-field"><span>Email</span><span className="auth-input-wrap"><Mail size={17} /><input type="email" required autoComplete="email" placeholder="nama@email.com" value={email} onChange={(e) => setEmail(e.target.value)} /></span></label>
+              <label className="auth-field"><span>Kata sandi</span><span className="auth-input-wrap"><input type={showPw ? "text" : "password"} required minLength={6} autoComplete="new-password" placeholder="Minimal 6 karakter" value={password} onChange={(e) => setPassword(e.target.value)} /><button type="button" className="auth-password-toggle" onClick={() => setShowPw(!showPw)} aria-label={showPw ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}>{showPw ? <EyeOff size={17} /> : <Eye size={17} />}</button></span><small className="register-field-hint">Gunakan minimal 6 karakter.</small></label>
+              {error && <p className="auth-error" role="alert">{error}</p>}
+              <button type="submit" className="auth-submit">Lanjut isi profil <ArrowRight size={17} /></button>
+            </form>
+          ) : (
+            <form onSubmit={finishRegister} className="auth-form register-form">
+              <label className="auth-field"><span>Nama lengkap</span><span className="auth-input-wrap"><User size={17} /><input type="text" required autoComplete="name" placeholder="Nama yang ingin kami gunakan" value={nama} onChange={(e) => setNama(e.target.value)} /></span></label>
+              <label className="auth-field"><span>Nomor ponsel</span><span className="auth-input-wrap"><Phone size={17} /><input type="tel" required autoComplete="tel" inputMode="tel" placeholder="08xxxxxxxxxx" value={noHp} onChange={(e) => setNoHp(e.target.value)} /></span></label>
+              <label className="auth-field"><span>Kode referral <em>Opsional</em></span><span className="auth-input-wrap"><Gift size={17} /><input type="text" autoCapitalize="characters" placeholder="Masukkan kode teman" value={refCode} onChange={(e) => setRefCode(e.target.value.toUpperCase())} /></span></label>
+              {error && <p className="auth-error" role="alert">{error}</p>}
+              <div className="register-actions"><button type="button" className="btn-secondary register-back" onClick={() => { setError(""); setStep(1); }}><ArrowLeft size={15} /> Kembali</button><button type="submit" className="auth-submit" disabled={loading}>{loading ? "Membuat akun�" : <>Buat akun <ArrowRight size={17} /></>}</button></div>
+            </form>
+          )}
+
+          <p className="auth-register">Sudah punya akun? <Link href="/login">Masuk</Link></p>
+          <p className="auth-terms">Dengan mendaftar, kamu menyetujui ketentuan layanan dan kebijakan privasi kami.</p>
         </div>
-      </div>
+      </section>
 
-      {step === 1 && (
-        <form onSubmit={goToStep2} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <p style={{ fontSize: 12, fontWeight: 700, color: "var(--ink)", margin: 0 }}>
-            Langkah 1: Email & kata sandi
-          </p>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--line)", borderRadius: 14, padding: "11px 14px" }}>
-            <Mail size={15} color="#a7b0c6" />
-            <input
-              type="email"
-              required
-              placeholder="Alamat email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={{ border: "none", outline: "none", flex: 1, fontSize: 13 }}
-            />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--line)", borderRadius: 14, padding: "11px 14px" }}>
-            <input
-              type={showPw ? "text" : "password"}
-              required
-              minLength={6}
-              placeholder="Buat kata sandi (min. 6 karakter)"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              style={{ border: "none", outline: "none", flex: 1, fontSize: 13 }}
-            />
-            <span onClick={() => setShowPw(!showPw)} style={{ cursor: "pointer" }}>
-              {showPw ? <EyeOff size={15} color="#a7b0c6" /> : <Eye size={15} color="#a7b0c6" />}
-            </span>
-          </div>
-          <button
-            type="submit"
-            style={{
-              background: "var(--coral)", color: "#fff", border: "none", borderRadius: 14,
-              padding: "12px 16px", fontWeight: 700, fontSize: 14, marginTop: 4,
-              boxShadow: "0 6px 16px rgba(255,106,77,0.28)",
-            }}
-          >
-            Lanjut
-          </button>
-        </form>
-      )}
-
-      {step === 2 && (
-        <form onSubmit={finishRegister} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <p style={{ fontSize: 12, fontWeight: 700, color: "var(--ink)", margin: 0 }}>
-            Langkah 2: Lengkapi profil
-          </p>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--line)", borderRadius: 14, padding: "11px 14px" }}>
-            <User size={15} color="#a7b0c6" />
-            <input
-              type="text"
-              required
-              placeholder="Nama lengkap"
-              value={nama}
-              onChange={(e) => setNama(e.target.value)}
-              style={{ border: "none", outline: "none", flex: 1, fontSize: 13 }}
-            />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--line)", borderRadius: 14, padding: "11px 14px" }}>
-            <Phone size={15} color="#a7b0c6" />
-            <input
-              type="tel"
-              required
-              placeholder="Nomor HP"
-              value={noHp}
-              onChange={(e) => setNoHp(e.target.value)}
-              style={{ border: "none", outline: "none", flex: 1, fontSize: 13 }}
-            />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--line)", borderRadius: 14, padding: "11px 14px" }}>
-            <Gift size={15} color="#a7b0c6" />
-            <input
-              type="text"
-              placeholder="Kode referral (opsional)"
-              value={refCode}
-              onChange={(e) => setRefCode(e.target.value.toUpperCase())}
-              style={{ border: "none", outline: "none", flex: 1, fontSize: 13, textTransform: "uppercase" }}
-            />
-          </div>
-          {error && <p style={{ color: "#c4342f", fontSize: 12 }}>{error}</p>}
-          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="btn-secondary"
-              style={{ flex: 1 }}
-            >
-              Kembali
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                flex: 2, background: "var(--coral)", color: "#fff", border: "none", borderRadius: 14,
-                padding: "12px 16px", fontWeight: 700, fontSize: 14,
-                boxShadow: "0 6px 16px rgba(255,106,77,0.28)", opacity: loading ? 0.6 : 1,
-              }}
-            >
-              {loading ? "Memproses..." : "Daftar"}
-            </button>
-          </div>
-        </form>
-      )}
-
-      <p style={{ textAlign: "center", fontSize: 12, marginTop: 16 }}>
-        Sudah punya akun?{" "}
-        <a href="/login" style={{ color: "var(--blue)", fontWeight: 700 }}>
-          Masuk
-        </a>
-      </p>
-    </div>
+      {notice && <div className="register-modal-backdrop" onClick={() => setNotice(null)}><section className="register-modal" role="dialog" aria-modal="true" aria-labelledby="register-modal-title" onClick={(e) => e.stopPropagation()}><button className="register-modal-close" onClick={() => setNotice(null)} aria-label="Tutup"><X size={18} /></button><span className="register-modal-icon"><CircleCheck size={25} /></span><h2 id="register-modal-title">{notice.title}</h2><p>{notice.message}</p><button className="auth-submit" onClick={notice.action}>{notice.actionLabel || "Mulai belanja"}<ArrowRight size={17} /></button></section></div>}
+    </main>
   );
 }
+
