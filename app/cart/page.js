@@ -7,7 +7,7 @@ import { supabase } from "../../lib/supabase";
 import BottomNav from "../../components/BottomNav";
 import { useToast } from "../../components/ToastProvider";
 import { getDistanceKm, getShippingOptions, availableSlotsForToday, TIME_SLOTS, slotToTimestamp } from "../../lib/shipping";
-import { MapPin, Smartphone, Landmark, Wallet, Minus, Plus, ShoppingCart, Plus as PlusIcon, Trash2, Zap, Clock, Leaf, CalendarClock, TicketPercent, X, Check, ArrowRight, ShieldCheck } from "lucide-react";
+import { MapPin, Smartphone, Landmark, Wallet, Minus, Plus, ShoppingCart, Plus as PlusIcon, Trash2, Zap, Clock, Leaf, CalendarClock, TicketPercent, X, Check, ArrowRight, ShieldCheck, ChevronDown, Search } from "lucide-react";
 
 const rupiah = (n) => "Rp" + Number(n).toLocaleString("id-ID");
 
@@ -27,6 +27,9 @@ export default function CartPage() {
   const [vouchers, setVouchers] = useState([]);
   const [voucherId, setVoucherId] = useState("");
   const [receiptOpen, setReceiptOpen] = useState(false);
+  const [addressPickerOpen, setAddressPickerOpen] = useState(false);
+  const [voucherPickerOpen, setVoucherPickerOpen] = useState(false);
+  const [addressSearch, setAddressSearch] = useState("");
   const [saldo, setSaldo] = useState(null);
 
   const loadAddresses = () => {
@@ -56,18 +59,22 @@ export default function CartPage() {
   }, []);
 
   useEffect(() => {
-    if (!receiptOpen) return;
+    if (!receiptOpen && !addressPickerOpen && !voucherPickerOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKeyDown = (event) => {
-      if (event.key === "Escape" && !loading) setReceiptOpen(false);
+      if (event.key === "Escape" && !loading) {
+        setReceiptOpen(false);
+        setAddressPickerOpen(false);
+        setVoucherPickerOpen(false);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [receiptOpen, loading]);
+  }, [receiptOpen, addressPickerOpen, voucherPickerOpen, loading]);
 
   const change = (id, delta) => setCart(updateQty(id, delta));
 
@@ -77,6 +84,9 @@ export default function CartPage() {
   };
 
   const selectedAddress = addresses.find((a) => a.id === addressId);
+  const filteredAddresses = addresses.filter((address) =>
+    `${address.label} ${address.penerima} ${address.alamat_lengkap} ${address.kota}`.toLowerCase().includes(addressSearch.toLowerCase())
+  );
   const distanceKm = useMemo(() => getDistanceKm(selectedAddress), [selectedAddress]);
   const shippingOptions = useMemo(() => getShippingOptions(distanceKm), [distanceKm]);
   const chosenShipping = shippingOptions.find((o) => o.id === shippingId) || shippingOptions[1];
@@ -167,18 +177,15 @@ export default function CartPage() {
         <MapPin size={18} color="var(--blue)" style={{ flexShrink: 0, marginTop: 2 }} />
         <div style={{ flex: 1 }}>
           <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 700 }}>Alamat pengiriman</p>
-          {addresses.length > 0 ? (
-            <select
-              value={addressId || ""}
-              onChange={(e) => setAddressId(e.target.value)}
-              style={{ width: "100%", border: "none", fontSize: 11.5, color: "var(--ink-soft)", padding: 0 }}
-            >
-              {addresses.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label} — {a.alamat_lengkap}
-                </option>
-              ))}
-            </select>
+          {selectedAddress ? (
+            <button type="button" className="checkout-address-trigger" onClick={() => setAddressPickerOpen(true)}>
+              <span><strong>{selectedAddress.label}</strong>{selectedAddress.is_default && <small>Alamat utama</small>}<span>{selectedAddress.alamat_lengkap}, {selectedAddress.kota}</span></span>
+              <span className="checkout-change">Ubah <ChevronDown size={14} /></span>
+            </button>
+          ) : addresses.length > 0 ? (
+            <button type="button" className="checkout-address-trigger" onClick={() => setAddressPickerOpen(true)}>
+              <span><strong>Pilih alamat pengiriman</strong><span>{addresses.length} alamat tersimpan</span></span><ChevronDown size={16} />
+            </button>
           ) : (
             <p style={{ fontSize: 11.5, color: "var(--ink-soft)", margin: 0 }}>Belum ada alamat tersimpan.</p>
           )}
@@ -336,10 +343,11 @@ export default function CartPage() {
 
       <div className="checkout-voucher card">
         <div className="checkout-voucher-heading"><span className="checkout-voucher-icon"><TicketPercent size={18} /></span><span><strong>Pakai voucher</strong><small>{vouchers.length ? `${vouchers.length} voucher tersedia` : "Voucher belanja kamu"}</small></span></div>
-        <select aria-label="Pilih voucher" value={voucherId} onChange={(e) => setVoucherId(e.target.value)}>
-          <option value="">Tanpa voucher</option>
-          {vouchers.map((v) => <option key={v.id} value={v.id}>{v.vouchers.judul} · {v.vouchers.tipe === "persen" ? `${v.vouchers.nilai}%` : v.vouchers.tipe === "gratis_ongkir" ? "Gratis ongkir" : rupiah(v.vouchers.nilai)}</option>)}
-        </select>
+        <button type="button" className={`checkout-voucher-trigger ${selectedVoucher ? "is-applied" : ""}`} onClick={() => setVoucherPickerOpen(true)}>
+          <span className="checkout-voucher-ticket"><TicketPercent size={17} /></span>
+          <span><strong>{selectedVoucher ? selectedVoucher.vouchers.judul : "Pilih voucher"}</strong><small>{selectedVoucher ? "Voucher diterapkan pada pesanan ini" : vouchers.length ? `${vouchers.length} voucher siap digunakan` : "Lihat voucher yang tersedia"}</small></span>
+          <ChevronDown size={16} />
+        </button>
         {selectedVoucher && <p className="checkout-voucher-applied"><Check size={14} /> Hemat {rupiah(voucherDiscount)} dari {selectedVoucher.vouchers.judul}</p>}
       </div>
 
@@ -365,6 +373,35 @@ export default function CartPage() {
       </button>
 
       {receiptOpen && <div className="checkout-modal-backdrop" onClick={() => !loading && setReceiptOpen(false)}><section className="checkout-modal" role="dialog" aria-modal="true" aria-labelledby="receipt-title" onClick={(e) => e.stopPropagation()}><button className="checkout-modal-close" onClick={() => setReceiptOpen(false)} aria-label="Tutup" disabled={loading}><X size={19} /></button><div className="receipt-success-icon"><ShieldCheck size={24} /></div><span className="receipt-eyebrow">RINGKASAN PESANAN</span><h2 id="receipt-title">Periksa sebelum membayar</h2><p className="receipt-address"><MapPin size={15} /> {selectedAddress?.label || "Alamat"} · {selectedAddress?.alamat_lengkap || "Alamat pengiriman"}</p><div className="receipt-items">{cart.map((item) => <div className="receipt-item" key={item.id}><span>{item.nama}<small>{item.qty} × {rupiah(item.harga)}</small></span><strong>{rupiah(item.harga * item.qty)}</strong></div>)}</div><div className="receipt-totals"><div><span>Subtotal barang</span><strong>{rupiah(subtotal)}</strong></div><div><span>Ongkos kirim · {chosenShipping.label}</span><strong>{ongkir ? rupiah(ongkir) : "Gratis"}</strong></div>{selectedVoucher && <div className="discount"><span>Potongan voucher</span><strong>− {rupiah(voucherDiscount)}</strong></div>}<div className="receipt-grand-total"><span>Total pembayaran</span><strong>{rupiah(total)}</strong></div></div><div className="receipt-method"><span className="checkout-payment-icon">{metode === "ewallet" ? <Smartphone size={18} /> : metode === "bank" ? <Landmark size={18} /> : <Wallet size={18} />}</span><span><small>Metode pembayaran</small><strong>{paymentOptions.find((item) => item.id === metode)?.label}</strong></span>{metode === "saldo" && saldo != null && <small>Saldo {rupiah(saldo)}</small>}</div><button className="btn-primary receipt-pay" onClick={checkout} disabled={loading}>{loading ? "Memproses pesanan…" : <>Konfirmasi & bayar {rupiah(total)} <ArrowRight size={17} /></>}</button><button className="receipt-edit" onClick={() => setReceiptOpen(false)} disabled={loading}>Kembali, ubah pesanan</button></section></div>}
+
+      {addressPickerOpen && (
+        <div className="checkout-modal-backdrop picker-backdrop" onClick={() => setAddressPickerOpen(false)}>
+          <section className="checkout-picker" role="dialog" aria-modal="true" aria-labelledby="address-picker-title" onClick={(event) => event.stopPropagation()}>
+            <div className="picker-grab" />
+            <div className="picker-heading"><span className="picker-heading-icon address"><MapPin size={19} /></span><div><h2 id="address-picker-title">Pilih alamat</h2><p>Tentukan tujuan pengiriman pesananmu.</p></div><button className="checkout-modal-close" onClick={() => setAddressPickerOpen(false)} aria-label="Tutup"><X size={18} /></button></div>
+            <label className="picker-search"><Search size={16} /><input value={addressSearch} onChange={(event) => setAddressSearch(event.target.value)} placeholder="Cari nama atau kota" /></label>
+            <div className="picker-options address-options">
+              {filteredAddresses.map((address) => <button type="button" key={address.id} className={`picker-option address-option ${addressId === address.id ? "selected" : ""}`} onClick={() => { setAddressId(address.id); setAddressPickerOpen(false); setAddressSearch(""); }}><span className="picker-option-icon"><MapPin size={17} /></span><span className="picker-option-copy"><strong>{address.label}{address.is_default && <em>Utama</em>}</strong><small>{address.penerima} · {address.no_hp}</small><span>{address.alamat_lengkap}, {address.kota}{address.kode_pos ? ` ${address.kode_pos}` : ""}</span></span><span className="picker-check">{addressId === address.id && <Check size={14} />}</span></button>)}
+              {filteredAddresses.length === 0 && <div className="picker-empty"><MapPin size={23} /><strong>Alamat tidak ditemukan</strong><span>Coba kata kunci lain.</span></div>}
+            </div>
+            <Link href="/addresses/new" className="picker-add-address" onClick={() => setAddressPickerOpen(false)}><PlusIcon size={16} /> Tambah alamat baru</Link>
+          </section>
+        </div>
+      )}
+
+      {voucherPickerOpen && (
+        <div className="checkout-modal-backdrop picker-backdrop" onClick={() => setVoucherPickerOpen(false)}>
+          <section className="checkout-picker voucher-picker" role="dialog" aria-modal="true" aria-labelledby="voucher-picker-title" onClick={(event) => event.stopPropagation()}>
+            <div className="picker-grab" />
+            <div className="picker-heading"><span className="picker-heading-icon voucher"><TicketPercent size={19} /></span><div><h2 id="voucher-picker-title">Voucher kamu</h2><p>Pilih satu untuk mengurangi total belanja.</p></div><button className="checkout-modal-close" onClick={() => setVoucherPickerOpen(false)} aria-label="Tutup"><X size={18} /></button></div>
+            <div className="picker-options voucher-options">
+              <button type="button" className={`voucher-option ${!voucherId ? "selected" : ""}`} onClick={() => { setVoucherId(""); setVoucherPickerOpen(false); }}><span className="voucher-ticket muted"><X size={16} /></span><span className="picker-option-copy"><strong>Tanpa voucher</strong><small>Lanjutkan tanpa potongan</small></span><span className="picker-check">{!voucherId && <Check size={14} />}</span></button>
+              {vouchers.map((voucher) => { const info = voucher.vouchers; const label = info.tipe === "persen" ? `Diskon ${info.nilai}%` : info.tipe === "gratis_ongkir" ? "Gratis ongkos kirim" : `Potongan ${rupiah(info.nilai)}`; const active = voucherId === voucher.id; return <button type="button" key={voucher.id} className={`voucher-option ${active ? "selected" : ""}`} onClick={() => { setVoucherId(voucher.id); setVoucherPickerOpen(false); }}><span className="voucher-ticket"><TicketPercent size={17} /></span><span className="picker-option-copy"><strong>{info.judul}</strong><small>{label}{voucher.expires_at ? ` · Berlaku sampai ${new Date(voucher.expires_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}` : ""}</small></span><span className="picker-check">{active && <Check size={14} />}</span></button>; })}
+              {vouchers.length === 0 && <div className="picker-empty"><TicketPercent size={23} /><strong>Belum ada voucher tersedia</strong><span>Voucher aktif akan muncul di sini.</span></div>}
+            </div>
+          </section>
+        </div>
+      )}
 
       <BottomNav />
     </div>
